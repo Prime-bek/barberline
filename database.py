@@ -41,6 +41,18 @@ class Database:
                 )
             """)
             
+            # Таблица мастеров
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS masters (
+                    id INTEGER PRIMARY KEY,
+                    full_name TEXT,
+                    username TEXT,
+                    added_by INTEGER,
+                    added_at TEXT,
+                    is_active INTEGER DEFAULT 1
+                )
+            """)
+            
             await db.commit()
 
     async def add_user(self, user_id: int, full_name: str, username: Optional[str], 
@@ -243,112 +255,63 @@ class Database:
             
             return stats
 
-# ... (предыдущий код остается) ...
+    # ===== МЕТОДЫ ДЛЯ РАБОТЫ С МАСТЕРАМИ =====
 
-async def init(self):
-    """Инициализация базы данных"""
-    async with aiosqlite.connect(self.db_path) as db:
-        # Таблица пользователей (без изменений)
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY,
-                full_name TEXT,
-                username TEXT,
-                language TEXT DEFAULT 'ru',
-                city TEXT,
-                reminder_minutes INTEGER DEFAULT 30,
-                registration_date TEXT,
-                last_activity TEXT,
-                status TEXT DEFAULT 'active'
-            )
-        """)
-        
-        # Таблица броней (без изменений)
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS bookings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                date TEXT,
-                time TEXT,
-                phone TEXT,
-                status TEXT DEFAULT 'pending',
-                reject_reason TEXT,
-                created_at TEXT,
-                FOREIGN KEY (user_id) REFERENCES users (id)
-            )
-        """)
-        
-        # НОВАЯ Таблица мастеров
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS masters (
-                id INTEGER PRIMARY KEY,
-                full_name TEXT,
-                username TEXT,
-                added_by INTEGER,
-                added_at TEXT,
-                is_active INTEGER DEFAULT 1
-            )
-        """)
-        
-        await db.commit()
+    async def add_master(self, master_id: int, full_name: str, username: Optional[str], added_by: int) -> bool:
+        """Добавить мастера"""
+        try:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    INSERT OR REPLACE INTO masters (id, full_name, username, added_by, added_at, is_active)
+                    VALUES (?, ?, ?, ?, ?, 1)
+                """, (master_id, full_name, username, added_by, now))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error adding master: {e}")
+            return False
 
-# ... (добавляем в конец класса Database) ...
-
-# ===== МЕТОДЫ ДЛЯ РАБОТЫ С МАСТЕРАМИ =====
-
-async def add_master(self, master_id: int, full_name: str, username: Optional[str], added_by: int) -> bool:
-    """Добавить мастера"""
-    try:
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    async def remove_master(self, master_id: int) -> bool:
+        """Удалить мастера"""
         async with aiosqlite.connect(self.db_path) as db:
-            await db.execute("""
-                INSERT OR REPLACE INTO masters (id, full_name, username, added_by, added_at, is_active)
-                VALUES (?, ?, ?, ?, ?, 1)
-            """, (master_id, full_name, username, added_by, now))
+            await db.execute("DELETE FROM masters WHERE id = ?", (master_id,))
             await db.commit()
             return True
-    except Exception as e:
-        print(f"Error adding master: {e}")
-        return False
 
-async def remove_master(self, master_id: int) -> bool:
-    """Удалить мастера"""
-    async with aiosqlite.connect(self.db_path) as db:
-        await db.execute("DELETE FROM masters WHERE id = ?", (master_id,))
-        await db.commit()
-        return True
+    async def get_master(self, master_id: int) -> Optional[Dict[str, Any]]:
+        """Получить данные мастера"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM masters WHERE id = ? AND is_active = 1", (master_id,)) as cursor:
+                row = await cursor.fetchone()
+                return dict(row) if row else None
 
-async def get_master(self, master_id: int) -> Optional[Dict[str, Any]]:
-    """Получить данные мастера"""
-    async with aiosqlite.connect(self.db_path) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM masters WHERE id = ? AND is_active = 1", (master_id,)) as cursor:
-            row = await cursor.fetchone()
-            return dict(row) if row else None
+    async def get_all_masters(self) -> List[Dict[str, Any]]:
+        """Получить всех активных мастеров"""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT * FROM masters WHERE is_active = 1 ORDER BY added_at DESC
+            """) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
 
-async def get_all_masters(self) -> List[Dict[str, Any]]:
-    """Получить всех активных мастеров"""
-    async with aiosqlite.connect(self.db_path) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("""
-            SELECT * FROM masters WHERE is_active = 1 ORDER BY added_at DESC
-        """) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(row) for row in rows]
+    async def is_master(self, user_id: int) -> bool:
+        """Проверить является ли пользователь мастером"""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute("""
+                SELECT COUNT(*) FROM masters WHERE id = ? AND is_active = 1
+            """, (user_id,)) as cursor:
+                row = await cursor.fetchone()
+                return row[0] > 0
 
-async def is_master(self, user_id: int) -> bool:
-    """Проверить является ли пользователь мастером"""
-    async with aiosqlite.connect(self.db_path) as db:
-        async with db.execute("""
-            SELECT COUNT(*) FROM masters WHERE id = ? AND is_active = 1
-        """, (user_id,)) as cursor:
-            row = await cursor.fetchone()
-            return row[0] > 0
+    async def toggle_master_status(self, master_id: int, is_active: bool) -> None:
+        """Включить/выключить мастера"""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                UPDATE masters SET is_active = ? WHERE id = ?
+            """, (1 if is_active else 0, master_id))
+            await db.commit()
 
-async def toggle_master_status(self, master_id: int, is_active: bool) -> None:
-    """Включить/выключить мастера"""
-    async with aiosqlite.connect(self.db_path) as db:
-        await db.execute("""
-            UPDATE masters SET is_active = ? WHERE id = ?
-        """, (1 if is_active else 0, master_id))
-        await db.commit()
+db = Database()
