@@ -174,7 +174,7 @@ async def process_reminder(message: Message, state: FSMContext, language: str):
         data['phone'],
         data['date'],
         data['time']
-    ) 
+    )
     await state.clear()
     is_admin = message.from_user.id == 1265652628
     

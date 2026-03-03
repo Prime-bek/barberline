@@ -5,6 +5,7 @@ from aiogram.fsm.state import State, StatesGroup
 from config import config
 from database import db
 from keyboards.admin_kb import masters_menu_kb, master_remove_kb, confirm_remove_master_kb
+from services.notifications import notify_new_master, notify_master_removed
 from utils.texts import get_text
 
 router = Router()
@@ -49,18 +50,15 @@ async def process_master_id(message: Message, state: FSMContext, language: str):
     try:
         master_id = int(message.text.strip())
         
-        # Проверяем, не является ли уже мастером
         if await db.is_master(master_id):
             await message.answer(get_text("master_already_exists", language))
             return
         
-        # Получаем данные пользователя
         user = await db.get_user(master_id)
         if not user:
             await message.answer(get_text("user_not_found", language))
             return
         
-        # Добавляем мастера
         success = await db.add_master(
             master_id, 
             user['full_name'], 
@@ -77,17 +75,7 @@ async def process_master_id(message: Message, state: FSMContext, language: str):
                 reply_markup=masters_menu_kb(language)
             )
             
-            # Уведомляем нового мастера
-            try:
-                from aiogram import Bot
-                from config import config
-                bot = Bot(token=config.BOT_TOKEN)
-                await bot.send_message(
-                    master_id,
-                    "✅ Вам назначены права мастера!\n\nТеперь вы будете получать заявки на бронь."
-                )
-            except Exception as e:
-                print(f"Could not notify new master: {e}")
+            await notify_new_master(master_id)
         else:
             await message.answer("❌ Ошибка при добавлении мастера.")
             
@@ -177,18 +165,7 @@ async def do_remove_master(callback: CallbackQuery, language: str):
     
     master_id = int(callback.data.split("_")[3])
     
-    # Уведомляем мастера об удалении прав
-    try:
-        from aiogram import Bot
-        from config import config
-        bot = Bot(token=config.BOT_TOKEN)
-        await bot.send_message(
-            master_id,
-            "❌ Ваши права мастера были отозваны."
-        )
-    except Exception as e:
-        print(f"Could not notify master: {e}")
-    
+    await notify_master_removed(master_id)
     await db.remove_master(master_id)
     
     await callback.message.edit_text(

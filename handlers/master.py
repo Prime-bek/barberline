@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from database import db  # Убираем импорт config для проверки мастера
+from database import db
 from services.scheduler import schedule_reminder
 from services.notifications import notify_user_approved, notify_user_rejected
 from utils.texts import get_text
@@ -14,7 +14,6 @@ class MasterStates(StatesGroup):
 
 @router.callback_query(F.data.startswith("accept_"))
 async def accept_booking(callback: CallbackQuery):
-    # Проверяем через БД вместо config
     if not await db.is_master(callback.from_user.id):
         await callback.answer(get_text("not_master", "ru"))
         return
@@ -33,7 +32,6 @@ async def accept_booking(callback: CallbackQuery):
     await db.update_booking_status(booking_id, "approved")
     await schedule_reminder(booking_id)
     
-    # Уведомляем пользователя
     await notify_user_approved(
         booking['user_id'],
         booking['date'],
@@ -48,7 +46,6 @@ async def accept_booking(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("reject_"))
 async def reject_booking_start(callback: CallbackQuery, state: FSMContext):
-    # Проверяем через БД
     if not await db.is_master(callback.from_user.id):
         await callback.answer(get_text("not_master", "ru"))
         return
@@ -73,7 +70,6 @@ async def process_reject_reason(message: Message, state: FSMContext):
     
     await db.update_booking_status(booking_id, "rejected", message.text)
     
-    # Уведомляем пользователя
     await notify_user_rejected(
         booking['user_id'],
         message.text,
@@ -82,12 +78,3 @@ async def process_reject_reason(message: Message, state: FSMContext):
     
     await message.answer(get_text("booking_rejected_master", "ru"))
     await state.clear()
-
-# Добавляем команду для мастера чтобы видеть свои заявки
-@router.message(F.text.in_(["✂️ Панель мастера", "✂️ Usta paneli"]))
-async def master_panel(message: Message, language: str):
-    if not await db.is_master(message.from_user.id):
-        await message.answer(get_text("not_master", language))
-        return
-    
-    await message.answer(get_text("master_menu", language))

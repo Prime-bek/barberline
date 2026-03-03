@@ -11,7 +11,6 @@ class Database:
     async def init(self):
         """Инициализация базы данных"""
         async with aiosqlite.connect(self.db_path) as db:
-            # Таблица пользователей
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY,
@@ -26,7 +25,6 @@ class Database:
                 )
             """)
             
-            # Таблица броней
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS bookings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,7 +39,6 @@ class Database:
                 )
             """)
             
-            # Таблица мастеров
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS masters (
                     id INTEGER PRIMARY KEY,
@@ -57,7 +54,6 @@ class Database:
 
     async def add_user(self, user_id: int, full_name: str, username: Optional[str], 
                       language: str = "ru") -> None:
-        """Добавить или обновить пользователя"""
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
@@ -68,7 +64,6 @@ class Database:
             await db.commit()
 
     async def update_user_activity(self, user_id: int) -> None:
-        """Обновить время последней активности"""
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
@@ -78,7 +73,6 @@ class Database:
             await db.commit()
 
     async def update_user_city(self, user_id: int, city: str) -> None:
-        """Обновить город пользователя"""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 "UPDATE users SET city = ? WHERE id = ?",
@@ -87,7 +81,6 @@ class Database:
             await db.commit()
 
     async def update_user_language(self, user_id: int, language: str) -> None:
-        """Обновить язык пользователя"""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 "UPDATE users SET language = ? WHERE id = ?",
@@ -96,7 +89,6 @@ class Database:
             await db.commit()
 
     async def update_reminder_minutes(self, user_id: int, minutes: int) -> None:
-        """Обновить время напоминания"""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 "UPDATE users SET reminder_minutes = ? WHERE id = ?",
@@ -105,7 +97,6 @@ class Database:
             await db.commit()
 
     async def get_user(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """Получить данные пользователя"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
@@ -115,7 +106,6 @@ class Database:
                 return dict(row) if row else None
 
     async def add_booking(self, user_id: int, date: str, time: str, phone: str) -> int:
-        """Добавить бронь"""
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
@@ -127,7 +117,6 @@ class Database:
 
     async def update_booking_status(self, booking_id: int, status: str, 
                                    reject_reason: Optional[str] = None) -> None:
-        """Обновить статус брони"""
         async with aiosqlite.connect(self.db_path) as db:
             if reject_reason:
                 await db.execute("""
@@ -140,7 +129,6 @@ class Database:
             await db.commit()
 
     async def get_booking(self, booking_id: int) -> Optional[Dict[str, Any]]:
-        """Получить бронь по ID"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("""
@@ -153,7 +141,6 @@ class Database:
                 return dict(row) if row else None
 
     async def get_user_bookings(self, user_id: int, status: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Получить брони пользователя"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             query = "SELECT * FROM bookings WHERE user_id = ?"
@@ -168,7 +155,6 @@ class Database:
                 return [dict(row) for row in rows]
 
     async def has_active_booking(self, user_id: int) -> bool:
-        """Проверить есть ли активная бронь"""
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute("""
                 SELECT COUNT(*) FROM bookings 
@@ -178,7 +164,6 @@ class Database:
                 return row[0] > 0
 
     async def is_time_busy(self, date: str, time: str) -> bool:
-        """Проверить занято ли время"""
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute("""
                 SELECT COUNT(*) FROM bookings 
@@ -188,7 +173,6 @@ class Database:
                 return row[0] > 0
 
     async def get_bookings_by_date(self, date: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Получить брони на дату"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             query = """
@@ -208,7 +192,6 @@ class Database:
                 return [dict(row) for row in rows]
 
     async def get_all_users(self, limit: int = 10, offset: int = 0) -> List[Dict[str, Any]]:
-        """Получить всех пользователей"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("""
@@ -220,7 +203,6 @@ class Database:
                 return [dict(row) for row in rows]
 
     async def get_all_bookings(self, limit: int = 10, offset: int = 0) -> List[Dict[str, Any]]:
-        """Получить все брони"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("""
@@ -234,7 +216,6 @@ class Database:
                 return [dict(row) for row in rows]
 
     async def get_statistics(self) -> Dict[str, int]:
-        """Получить статистику"""
         async with aiosqlite.connect(self.db_path) as db:
             stats = {}
             
@@ -255,10 +236,7 @@ class Database:
             
             return stats
 
-    # ===== МЕТОДЫ ДЛЯ РАБОТЫ С МАСТЕРАМИ =====
-
     async def add_master(self, master_id: int, full_name: str, username: Optional[str], added_by: int) -> bool:
-        """Добавить мастера"""
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             async with aiosqlite.connect(self.db_path) as db:
@@ -273,14 +251,12 @@ class Database:
             return False
 
     async def remove_master(self, master_id: int) -> bool:
-        """Удалить мастера"""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("DELETE FROM masters WHERE id = ?", (master_id,))
             await db.commit()
             return True
 
     async def get_master(self, master_id: int) -> Optional[Dict[str, Any]]:
-        """Получить данные мастера"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM masters WHERE id = ? AND is_active = 1", (master_id,)) as cursor:
@@ -288,7 +264,6 @@ class Database:
                 return dict(row) if row else None
 
     async def get_all_masters(self) -> List[Dict[str, Any]]:
-        """Получить всех активных мастеров"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("""
@@ -298,7 +273,6 @@ class Database:
                 return [dict(row) for row in rows]
 
     async def is_master(self, user_id: int) -> bool:
-        """Проверить является ли пользователь мастером"""
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute("""
                 SELECT COUNT(*) FROM masters WHERE id = ? AND is_active = 1
@@ -307,7 +281,6 @@ class Database:
                 return row[0] > 0
 
     async def toggle_master_status(self, master_id: int, is_active: bool) -> None:
-        """Включить/выключить мастера"""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 UPDATE masters SET is_active = ? WHERE id = ?
