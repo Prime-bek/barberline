@@ -2,13 +2,12 @@ import asyncio
 import logging
 import os
 import re
-import sqlite3
 import aiosqlite
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 from aiogram import Bot, Dispatcher, Router, F, BaseMiddleware
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -16,6 +15,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
+from translations import get_text, format_date_uz, TEXTS
 
 # ============ CONFIG ============
 @dataclass(frozen=True)
@@ -26,137 +26,6 @@ class Config:
     TIMEZONE: str = "Asia/Tashkent"
 
 config = Config()
-
-# ============ TEXTS ============
-TEXTS = {
-    "ru": {
-        "welcome": "Добро пожаловать в мужской салон ✂️\n\nВыберите действие:",
-        "choose_language": "🌐 Выберите язык:",
-        "choose_city": "🌍 Введите ваш город:",
-        "choose_date": "📅 Выберите дату:",
-        "choose_time": "⏰ Выберите время:",
-        "enter_name": "✏️ Введите ваше имя:",
-        "enter_phone": "📱 Введите номер телефона:",
-        "choose_reminder": "🔔 Выберите за сколько минут напомнить:",
-        "booking_sent": "⏳ Ваша заявка отправлена мастеру. Ожидайте подтверждения.",
-        "approved": "✅ Ваша бронь подтверждена!\n\n📅 Дата: {date}\n⏰ Время: {time}",
-        "rejected": "❌ Ваша бронь отклонена.\n\nПричина: {reason}",
-        "reminder": "🔔 Напоминание! У вас запись сегодня в {time}",
-        "queue_title": "📋 Записи на {date}:",
-        "queue_empty": "На эту дату пока нет записей.",
-        "no_access": "⛔ У вас нет доступа.",
-        "invalid_phone": "❌ Неверный формат телефона.",
-        "time_busy": "❌ Это время уже занято.",
-        "already_booked": "❌ У вас уже есть активная бронь.",
-        "new_booking_master": "🔔 Новая заявка!\n\n👤 Имя: {name}\n📱 Телефон: {phone}\n📅 Дата: {date}\n⏰ Время: {time}",
-        "enter_reject_reason": "❌ Введите причину отказа:",
-        "booking_rejected_master": "❌ Бронь отклонена.",
-        "booking_approved_master": "✅ Бронь подтверждена!",
-        "admin_menu": "🔧 Админ панель",
-        "masters_management": "👨‍💼 Управление мастерами",
-        "add_master": "➕ Добавить мастера",
-        "remove_master": "➖ Удалить мастера",
-        "list_masters": "📋 Список мастеров",
-        "enter_master_id": "🆔 Введите ID пользователя:",
-        "master_added": "✅ Мастер добавлен!\n\n👤 {name}\n🆔 ID: {id}",
-        "master_removed": "✅ Мастер удалён!",
-        "master_not_found": "❌ Мастер не найден.",
-        "user_not_found": "❌ Пользователь не найден.",
-        "master_already_exists": "⚠️ Уже является мастером.",
-        "no_masters": "❌ Нет мастеров.",
-        "masters_list": "👨‍💼 Мастера:\n\n",
-        "master_info": "{num}. {name} (ID: {id})\n",
-        "select_master_to_remove": "Выберите мастера для удаления:",
-        "not_master": "⛔ Вы не мастер.",
-        "users": "👥 Пользователи",
-        "bookings": "📋 Брони",
-        "statistics": "📊 Статистика",
-        "back": "🔙 Назад",
-        "main_menu": "📱 Главное меню",
-        "my_bookings": "📋 Мои записи",
-        "book": "📅 Записаться",
-        "queue": "👥 Кто до меня?",
-        "settings": "⚙️ Настройки",
-        "admin_panel": "🔧 Админ панель",
-        "minutes_10": "10 минут",
-        "minutes_25": "25 минут",
-        "minutes_30": "30 минут",
-        "accept": "✅ Принять",
-        "reject": "❌ Отклонить",
-        "next": "➡️",
-        "prev": "⬅️",
-        "active": "Активен",
-        "inactive": "Неактивен",
-    },
-    "uz": {
-        "welcome": "Erkaklar saloniga xush kelibsiz ✂️",
-        "choose_language": "🌐 Tilni tanlang:",
-        "choose_city": "🌍 Shahringizni kiriting:",
-        "choose_date": "📅 Sanani tanlang:",
-        "choose_time": "⏰ Vaqtni tanlang:",
-        "enter_name": "✏️ Ismingizni kiriting:",
-        "enter_phone": "📱 Telefon raqamingizni kiriting:",
-        "choose_reminder": "🔔 Eslatma uchun necha daqiqa:",
-        "booking_sent": "⏳ Buyurtmangiz ustaga yuborildi.",
-        "approved": "✅ Broningiz tasdiqlandi!\n\n📅 Sana: {date}\n⏰ Vaqt: {time}",
-        "rejected": "❌ Broningiz rad etildi.\n\nSabab: {reason}",
-        "reminder": "🔔 Eslatma! Bugun soat {time} da yozuvingiz bor",
-        "queue_title": "📋 {date} uchun yozuvlar:",
-        "queue_empty": "Bu sana uchun hali yozuvlar yo'q.",
-        "no_access": "⛔ Ruxsatingiz yo'q.",
-        "invalid_phone": "❌ Telefon raqami noto'g'ri.",
-        "time_busy": "❌ Bu vaqt band.",
-        "already_booked": "❌ Sizda allaqachon faol bron mavjud.",
-        "new_booking_master": "🔔 Yangi so'rov!\n\n👤 Ism: {name}\n📱 Telefon: {phone}\n📅 Sana: {date}\n⏰ Vaqt: {time}",
-        "enter_reject_reason": "❌ Rad etish sababini kiriting:",
-        "booking_rejected_master": "❌ Bron rad etildi.",
-        "booking_approved_master": "✅ Bron tasdiqlandi!",
-        "admin_menu": "🔧 Admin panel",
-        "masters_management": "👨‍💼 Ustalar boshqaruvi",
-        "add_master": "➕ Usta qo'shish",
-        "remove_master": "➖ Usta o'chirish",
-        "list_masters": "📋 Ustalar ro'yxati",
-        "enter_master_id": "🆔 Foydalanuvchi ID sini kiriting:",
-        "master_added": "✅ Usta qo'shildi!\n\n👤 {name}\n🆔 ID: {id}",
-        "master_removed": "✅ Usta o'chirildi!",
-        "master_not_found": "❌ Usta topilmadi.",
-        "user_not_found": "❌ Foydalanuvchi topilmadi.",
-        "master_already_exists": "⚠️ Allaqachon usta.",
-        "no_masters": "❌ Ustalar yo'q.",
-        "masters_list": "👨‍💼 Ustalar:\n\n",
-        "master_info": "{num}. {name} (ID: {id})\n",
-        "select_master_to_remove": "O'chirish uchun ustani tanlang:",
-        "not_master": "⛔ Siz usta emassiz.",
-        "users": "👥 Foydalanuvchilar",
-        "bookings": "📋 Bronlar",
-        "statistics": "📊 Statistika",
-        "back": "🔙 Orqaga",
-        "main_menu": "📱 Asosiy menyu",
-        "my_bookings": "📋 Mening yozuvlarim",
-        "book": "📅 Yozilish",
-        "queue": "👥 Menden oldin kim?",
-        "settings": "⚙️ Sozlamalar",
-        "admin_panel": "🔧 Admin panel",
-        "minutes_10": "10 daqiqa",
-        "minutes_25": "25 daqiqa",
-        "minutes_30": "30 daqiqa",
-        "accept": "✅ Qabul qilish",
-        "reject": "❌ Rad etish",
-        "next": "➡️",
-        "prev": "⬅️",
-        "active": "Faol",
-        "inactive": "Faol emas",
-    }
-}
-
-def get_text(key: str, lang: str = "ru", **kwargs) -> str:
-    text = TEXTS.get(lang, TEXTS["ru"]).get(key, key)
-    if kwargs:
-        try:
-            text = text.format(**kwargs)
-        except:
-            pass
-    return text
 
 # ============ DATABASE ============
 class Database:
@@ -171,7 +40,6 @@ class Database:
                     full_name TEXT,
                     username TEXT,
                     language TEXT DEFAULT 'ru',
-                    city TEXT,
                     reminder_minutes INTEGER DEFAULT 30,
                     registration_date TEXT,
                     last_activity TEXT,
@@ -187,7 +55,8 @@ class Database:
                     phone TEXT,
                     status TEXT DEFAULT 'pending',
                     reject_reason TEXT,
-                    created_at TEXT
+                    created_at TEXT,
+                    completed_at TEXT
                 )
             """)
             await db.execute("""
@@ -222,11 +91,6 @@ class Database:
     async def update_user_language(self, user_id: int, language: str):
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("UPDATE users SET language = ? WHERE id = ?", (language, user_id))
-            await db.commit()
-
-    async def update_user_city(self, user_id: int, city: str):
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute("UPDATE users SET city = ? WHERE id = ?", (city, user_id))
             await db.commit()
 
     async def update_reminder_minutes(self, user_id: int, minutes: int):
@@ -265,6 +129,19 @@ class Database:
                 await db.execute("UPDATE bookings SET status = ? WHERE id = ?", (status, booking_id))
             await db.commit()
 
+    async def complete_booking(self, booking_id: int, early: bool = False):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        status = "completed_early" if early else "completed"
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("UPDATE bookings SET status = ?, completed_at = ? WHERE id = ?", 
+                           (status, now, booking_id))
+            await db.commit()
+
+    async def cancel_booking(self, booking_id: int):
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("UPDATE bookings SET status = 'cancelled' WHERE id = ?", (booking_id,))
+            await db.commit()
+
     async def has_active_booking(self, user_id: int) -> bool:
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute("""
@@ -283,6 +160,48 @@ class Database:
                 row = await cursor.fetchone()
                 return row[0] > 0
 
+    async def get_user_active_booking(self, user_id: int):
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT * FROM bookings 
+                WHERE user_id = ? AND status IN ('pending', 'approved')
+                ORDER BY id DESC LIMIT 1
+            """, (user_id,)) as cursor:
+                row = await cursor.fetchone()
+                return dict(row) if row else None
+
+    async def get_user_bookings(self, user_id: int):
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("""
+                SELECT * FROM bookings WHERE user_id = ? ORDER BY created_at DESC
+            """, (user_id,)) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+
+    async def get_master_bookings(self, master_id: int, status: Optional[str] = None):
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            if status:
+                async with db.execute("""
+                    SELECT b.*, u.full_name 
+                    FROM bookings b 
+                    JOIN users u ON b.user_id = u.id 
+                    WHERE b.status = ? ORDER BY b.date, b.time
+                """, (status,)) as cursor:
+                    rows = await cursor.fetchall()
+                    return [dict(row) for row in rows]
+            else:
+                async with db.execute("""
+                    SELECT b.*, u.full_name 
+                    FROM bookings b 
+                    JOIN users u ON b.user_id = u.id 
+                    WHERE b.status IN ('pending', 'approved') ORDER BY b.date, b.time
+                """,) as cursor:
+                    rows = await cursor.fetchall()
+                    return [dict(row) for row in rows]
+
     async def get_bookings_by_date(self, date: str, status: Optional[str] = None):
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
@@ -296,21 +215,11 @@ class Database:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
 
-    async def get_user_bookings(self, user_id: int):
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("""
-                SELECT * FROM bookings WHERE user_id = ? ORDER BY date, time
-            """, (user_id,)) as cursor:
-                rows = await cursor.fetchall()
-                return [dict(row) for row in rows]
-
     async def get_all_users(self, limit: int = 10, offset: int = 0):
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            async with db.execute("""
-                SELECT * FROM users ORDER BY registration_date DESC LIMIT ? OFFSET ?
-            """, (limit, offset)) as cursor:
+            async with db.execute("SELECT * FROM users ORDER BY registration_date DESC LIMIT ? OFFSET ?", 
+                                (limit, offset)) as cursor:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
 
@@ -352,7 +261,7 @@ class Database:
                 await db.commit()
                 return True
         except Exception as e:
-            print(f"Error adding master: {e}")
+            print(f"Error: {e}")
             return False
 
     async def remove_master(self, master_id: int) -> bool:
@@ -383,6 +292,108 @@ class Database:
 
 db = Database()
 
+# ============ SERVICES ============
+scheduler = AsyncIOScheduler(timezone=config.TIMEZONE)
+bot_instance: Bot = None
+
+def set_bot(bot: Bot):
+    global bot_instance
+    bot_instance = bot
+
+async def send_reminder(user_id: int, booking_id: int, time: str, lang: str):
+    if not bot_instance:
+        return
+    try:
+        text = get_text("reminder", lang, minutes="X", time=time)
+        await bot_instance.send_message(user_id, text)
+    except Exception as e:
+        print(f"Error: {e}")
+
+async def notify_user_approved(user_id: int, date: str, time: str, lang: str):
+    if not bot_instance:
+        return
+    try:
+        formatted_date = format_date_uz(date, lang)
+        text = get_text("approved", lang, date=formatted_date, time=time)
+        await bot_instance.send_message(user_id, text)
+    except Exception as e:
+        print(f"Error: {e}")
+
+async def notify_user_rejected(user_id: int, reason: str, lang: str):
+    if not bot_instance:
+        return
+    try:
+        text = get_text("rejected", lang, reason=reason)
+        await bot_instance.send_message(user_id, text)
+    except Exception as e:
+        print(f"Error: {e}")
+
+async def send_booking_to_masters(booking_id: int, name: str, phone: str, date: str, time: str):
+    if not bot_instance:
+        return
+    try:
+        formatted_date = format_date_uz(date, "ru")
+        text = get_text("new_booking_master", "ru", name=name, phone=phone, date=formatted_date, time=time)
+        masters = await db.get_all_masters()
+        
+        if not masters:
+            await bot_instance.send_message(config.ADMIN_ID, "⚠️ Нет мастеров!\n\n" + text, 
+                                          reply_markup=master_booking_kb(booking_id))
+            return
+        
+        for master in masters:
+            try:
+                await bot_instance.send_message(master['id'], text, reply_markup=master_booking_kb(booking_id))
+            except Exception as e:
+                print(f"Error sending to master: {e}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+async def notify_new_master(master_id: int):
+    if not bot_instance:
+        return
+    try:
+        await bot_instance.send_message(master_id, get_text("master_added", "ru", name="", id=""))
+    except Exception as e:
+        print(f"Error: {e}")
+
+async def notify_master_removed(master_id: int):
+    if not bot_instance:
+        return
+    try:
+        await bot_instance.send_message(master_id, get_text("master_removed", "ru"))
+    except Exception as e:
+        print(f"Error: {e}")
+
+async def schedule_reminder(booking_id: int):
+    booking = await db.get_booking(booking_id)
+    if not booking or booking['status'] != 'approved':
+        return
+    user = await db.get_user(booking['user_id'])
+    if not user:
+        return
+    
+    date_str = booking['date']
+    time_str = booking['time']
+    reminder_minutes = user['reminder_minutes']
+    
+    booking_datetime = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+    reminder_datetime = booking_datetime - timedelta(minutes=reminder_minutes)
+    
+    if reminder_datetime <= datetime.now():
+        return
+    
+    scheduler.add_job(
+        send_reminder,
+        trigger=DateTrigger(run_date=reminder_datetime),
+        args=[booking['user_id'], booking_id, time_str, user['language']],
+        id=f"reminder_{booking_id}",
+        replace_existing=True
+    )
+
+def init_scheduler():
+    scheduler.start()
+
 # ============ KEYBOARDS ============
 def language_kb():
     builder = ReplyKeyboardBuilder()
@@ -396,11 +407,17 @@ def main_menu_kb(lang: str = "ru", is_admin: bool = False):
     builder.button(text=get_text("book", lang))
     builder.button(text=get_text("my_bookings", lang))
     builder.button(text=get_text("queue", lang))
-    builder.button(text=get_text("settings", lang))
+    builder.button(text=get_text("settings_btn", lang))
     if is_admin:
-        builder.button(text=get_text("admin_panel", lang))
+        builder.button(text=get_text("admin_panel_cmd", lang))
     builder.adjust(2, 2, 1)
     return builder.as_markup(resize_keyboard=True)
+
+def contact_kb(lang: str = "ru"):
+    builder = ReplyKeyboardBuilder()
+    builder.button(text=get_text("share_contact", lang), request_contact=True)
+    builder.adjust(1)
+    return builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
 
 def reminder_kb(lang: str = "ru"):
     builder = ReplyKeyboardBuilder()
@@ -410,32 +427,61 @@ def reminder_kb(lang: str = "ru"):
     builder.adjust(3)
     return builder.as_markup(resize_keyboard=True, one_time_keyboard=True)
 
-def back_kb(lang: str = "ru"):
-    builder = ReplyKeyboardBuilder()
-    builder.button(text=get_text("back", lang))
-    return builder.as_markup(resize_keyboard=True)
+def dates_inline_kb(lang: str = "ru"):
+    """Inline клавиатура для выбора даты"""
+    builder = InlineKeyboardBuilder()
+    today = datetime.now()
+    
+    for i in range(7):
+        date = today + timedelta(days=i)
+        date_str = date.strftime("%Y-%m-%d")
+        display = format_date_uz(date_str, lang)
+        
+        if i == 0:
+            display = get_text("today", lang) + f" ({display})"
+        elif i == 1:
+            display = get_text("tomorrow", lang) + f" ({display})"
+        
+        builder.button(text=display, callback_data=f"date_{date_str}")
+    
+    builder.adjust(1)
+    return builder.as_markup()
 
-def generate_dates_kb(dates: list, lang: str = "ru"):
-    builder = ReplyKeyboardBuilder()
-    for date in dates:
-        builder.button(text=date)
-    builder.button(text=get_text("back", lang))
-    builder.adjust(2)
-    return builder.as_markup(resize_keyboard=True)
-
-def generate_times_kb(times: list, lang: str = "ru"):
-    builder = ReplyKeyboardBuilder()
-    for time in times:
-        builder.button(text=time)
-    builder.button(text=get_text("back", lang))
-    builder.adjust(3)
-    return builder.as_markup(resize_keyboard=True)
+def times_inline_kb(date_str: str, lang: str = "ru"):
+    """Inline клавиатура для выбора времени (UZB время)"""
+    builder = InlineKeyboardBuilder()
+    
+    # Время с 08:30 до 20:00 с шагом 30 минут (UZB)
+    hours = list(range(8, 21))
+    for hour in hours:
+        for minute in [0, 30]:
+            if hour == 20 and minute == 30:
+                continue
+            time_str = f"{hour:02d}:{minute:02d}"
+            builder.button(text=time_str, callback_data=f"time_{time_str}")
+    
+    builder.button(text=get_text("back", lang), callback_data="back_to_dates")
+    builder.adjust(4)
+    return builder.as_markup()
 
 def master_booking_kb(booking_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Принять", callback_data=f"accept_{booking_id}")
     builder.button(text="❌ Отклонить", callback_data=f"reject_{booking_id}")
     builder.adjust(2)
+    return builder.as_markup()
+
+def master_panel_kb(booking_id: int, lang: str = "ru"):
+    """Клавиатура для мастера с кнопками завершения"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=get_text("complete_booking", lang), callback_data=f"complete_{booking_id}")
+    builder.button(text=get_text("early_complete", lang), callback_data=f"early_{booking_id}")
+    builder.adjust(2)
+    return builder.as_markup()
+
+def cancel_booking_kb(booking_id: int, lang: str = "ru"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=get_text("cancel_booking", lang), callback_data=f"cancel_{booking_id}")
     return builder.as_markup()
 
 def admin_menu_kb(lang: str = "ru"):
@@ -475,12 +521,18 @@ def pagination_kb(current_page: int, total_pages: int, prefix: str, lang: str = 
     builder = InlineKeyboardBuilder()
     buttons = []
     if current_page > 0:
-        buttons.append(InlineKeyboardButton(text=get_text("prev", lang), callback_data=f"{prefix}_{current_page - 1}"))
+        buttons.append(InlineKeyboardButton(text="⬅️", callback_data=f"{prefix}_{current_page - 1}"))
     buttons.append(InlineKeyboardButton(text=f"{current_page + 1}/{total_pages}", callback_data="ignore"))
     if current_page < total_pages - 1:
-        buttons.append(InlineKeyboardButton(text=get_text("next", lang), callback_data=f"{prefix}_{current_page + 1}"))
+        buttons.append(InlineKeyboardButton(text="➡️", callback_data=f"{prefix}_{current_page + 1}"))
     builder.row(*buttons)
     builder.button(text=get_text("back", lang), callback_data="admin_back")
+    return builder.as_markup()
+
+def settings_inline_kb(lang: str = "ru"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=get_text("change_language", lang), callback_data="change_lang")
+    builder.button(text=get_text("back", lang), callback_data="back_to_menu")
     return builder.as_markup()
 
 # ============ MIDDLEWARE ============
@@ -493,110 +545,8 @@ class LanguageMiddleware(BaseMiddleware):
             data['language'] = 'ru'
         return await handler(event, data)
 
-# ============ SERVICES ============
-scheduler = AsyncIOScheduler(timezone=config.TIMEZONE)
-bot_instance: Bot = None
-
-def set_bot(bot: Bot):
-    global bot_instance
-    bot_instance = bot
-
-async def send_reminder(user_id: int, booking_id: int, time: str, lang: str):
-    if not bot_instance:
-        return
-    try:
-        text = get_text("reminder", lang, time=time)
-        await bot_instance.send_message(user_id, text)
-    except Exception as e:
-        print(f"Error sending reminder: {e}")
-
-async def notify_user_approved(user_id: int, date: str, time: str, lang: str):
-    if not bot_instance:
-        return
-    try:
-        text = get_text("approved", lang, date=date, time=time)
-        await bot_instance.send_message(user_id, text)
-    except Exception as e:
-        print(f"Error notifying user: {e}")
-
-async def notify_user_rejected(user_id: int, reason: str, lang: str):
-    if not bot_instance:
-        return
-    try:
-        text = get_text("rejected", lang, reason=reason)
-        await bot_instance.send_message(user_id, text)
-    except Exception as e:
-        print(f"Error notifying user: {e}")
-
-async def send_booking_to_masters(booking_id: int, name: str, phone: str, date: str, time: str):
-    if not bot_instance:
-        return
-    try:
-        text = get_text("new_booking_master", "ru", name=name, phone=phone, date=date, time=time)
-        masters = await db.get_all_masters()
-        
-        if not masters:
-            await bot_instance.send_message(config.ADMIN_ID, "⚠️ Нет мастеров!\n\n" + text, reply_markup=master_booking_kb(booking_id))
-            return
-        
-        for master in masters:
-            try:
-                await bot_instance.send_message(master['id'], text, reply_markup=master_booking_kb(booking_id))
-            except Exception as e:
-                print(f"Could not send to master {master['id']}: {e}")
-    except Exception as e:
-        print(f"Error sending booking: {e}")
-
-async def notify_new_master(master_id: int):
-    if not bot_instance:
-        return
-    try:
-        await bot_instance.send_message(master_id, "✅ Вам назначены права мастера!")
-    except Exception as e:
-        print(f"Could not notify master: {e}")
-
-async def notify_master_removed(master_id: int):
-    if not bot_instance:
-        return
-    try:
-        await bot_instance.send_message(master_id, "❌ Ваши права мастера отозваны.")
-    except Exception as e:
-        print(f"Could not notify master: {e}")
-
-async def schedule_reminder(booking_id: int):
-    booking = await db.get_booking(booking_id)
-    if not booking or booking['status'] != 'approved':
-        return
-    user = await db.get_user(booking['user_id'])
-    if not user:
-        return
-    
-    date_str = booking['date']
-    time_str = booking['time']
-    reminder_minutes = user['reminder_minutes']
-    
-    booking_datetime = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
-    reminder_datetime = booking_datetime - timedelta(minutes=reminder_minutes)
-    
-    if reminder_datetime <= datetime.now():
-        return
-    
-    scheduler.add_job(
-        send_reminder,
-        trigger=DateTrigger(run_date=reminder_datetime),
-        args=[booking['user_id'], booking_id, time_str, user['language']],
-        id=f"reminder_{booking_id}",
-        replace_existing=True
-    )
-
-def init_scheduler():
-    scheduler.start()
-
 # ============ STATES ============
 class BookingStates(StatesGroup):
-    waiting_city = State()
-    waiting_date = State()
-    waiting_time = State()
     waiting_name = State()
     waiting_phone = State()
     waiting_reminder = State()
@@ -607,7 +557,7 @@ class MasterStates(StatesGroup):
 class MasterManagementStates(StatesGroup):
     waiting_master_id = State()
 
-# ============ HANDLERS ============
+# ============ ROUTERS ============
 start_router = Router()
 booking_router = Router()
 master_router = Router()
@@ -615,116 +565,112 @@ admin_router = Router()
 settings_router = Router()
 masters_router = Router()
 
+# ============ HANDLERS ============
+
 # Start handlers
 @start_router.message(Command("start"))
 async def cmd_start(message: Message):
     user = await db.get_user(message.from_user.id)
     if not user:
         await db.add_user(message.from_user.id, message.from_user.full_name, message.from_user.username)
-        await message.answer(get_text("choose_language"), reply_markup=language_kb())
+        await message.answer(get_text("welcome", "ru"), reply_markup=language_kb())
     else:
         is_admin = message.from_user.id == config.ADMIN_ID
-        await message.answer(get_text("welcome", user['language']), reply_markup=main_menu_kb(user['language'], is_admin))
+        lang = user.get('language', 'ru')
+        await message.answer(get_text("main_menu", lang), reply_markup=main_menu_kb(lang, is_admin))
 
 @start_router.message(F.text.in_(["🇷🇺 Русский", "🇺🇿 O'zbekcha"]))
 async def set_language(message: Message):
     lang = "ru" if "Русский" in message.text else "uz"
     await db.update_user_language(message.from_user.id, lang)
     is_admin = message.from_user.id == config.ADMIN_ID
-    await message.answer(get_text("welcome", lang), reply_markup=main_menu_kb(lang, is_admin))
+    await message.answer(get_text("main_menu", lang), reply_markup=main_menu_kb(lang, is_admin))
 
-# Booking handlers
-def generate_available_dates():
-    dates = []
-    today = datetime.now()
-    for i in range(14):
-        date = today + timedelta(days=i)
-        dates.append(date.strftime("%Y-%m-%d"))
-    return dates
-
-def generate_available_times():
-    return [f"{hour:02d}:00" for hour in range(9, 19)]
-
-def validate_phone(phone: str) -> bool:
-    return bool(re.match(r'^\+?[\d\s\-\(\)]{9,15}$', phone))
-
+# Booking handlers - INLINE клавиатуры
 @booking_router.message(F.text.in_(["📅 Записаться", "📅 Yozilish"]))
 async def start_booking(message: Message, state: FSMContext, language: str):
     if await db.has_active_booking(message.from_user.id):
         await message.answer(get_text("already_booked", language))
         return
-    await state.set_state(BookingStates.waiting_city)
-    await message.answer(get_text("choose_city", language), reply_markup=back_kb(language))
-
-@booking_router.message(BookingStates.waiting_city)
-async def process_city(message: Message, state: FSMContext, language: str):
-    if message.text == get_text("back", language):
-        await state.clear()
-        is_admin = message.from_user.id == config.ADMIN_ID
-        await message.answer(get_text("main_menu", language), reply_markup=main_menu_kb(language, is_admin))
-        return
-    await state.update_data(city=message.text)
-    await db.update_user_city(message.from_user.id, message.text)
-    dates = generate_available_dates()
-    await state.set_state(BookingStates.waiting_date)
-    await message.answer(get_text("choose_date", language), reply_markup=generate_dates_kb(dates, language))
-
-@booking_router.message(BookingStates.waiting_date)
-async def process_date(message: Message, state: FSMContext, language: str):
-    if message.text == get_text("back", language):
-        await state.set_state(BookingStates.waiting_city)
-        await message.answer(get_text("choose_city", language), reply_markup=back_kb(language))
-        return
-    try:
-        datetime.strptime(message.text, "%Y-%m-%d")
-        await state.update_data(date=message.text)
-        times = generate_available_times()
-        await state.set_state(BookingStates.waiting_time)
-        await message.answer(get_text("choose_time", language), reply_markup=generate_times_kb(times, language))
-    except ValueError:
-        await message.answer("❌ Неверный формат даты")
-
-@booking_router.message(BookingStates.waiting_time)
-async def process_time(message: Message, state: FSMContext, language: str):
-    if message.text == get_text("back", language):
-        dates = generate_available_dates()
-        await state.set_state(BookingStates.waiting_date)
-        await message.answer(get_text("choose_date", language), reply_markup=generate_dates_kb(dates, language))
-        return
-    data = await state.get_data()
-    if await db.is_time_busy(data.get('date'), message.text):
-        await message.answer(get_text("time_busy", language))
-        return
-    await state.update_data(time=message.text)
+    
     await state.set_state(BookingStates.waiting_name)
-    await message.answer(get_text("enter_name", language))
+    await message.answer(get_text("enter_name", language), reply_markup=ReplyKeyboardRemove())
 
 @booking_router.message(BookingStates.waiting_name)
 async def process_name(message: Message, state: FSMContext, language: str):
     await state.update_data(name=message.text)
     await state.set_state(BookingStates.waiting_phone)
-    await message.answer(get_text("enter_phone", language))
+    await message.answer(get_text("enter_phone", language), reply_markup=contact_kb(language))
 
 @booking_router.message(BookingStates.waiting_phone)
 async def process_phone(message: Message, state: FSMContext, language: str):
-    if not validate_phone(message.text):
-        await message.answer(get_text("invalid_phone", language))
-        return
-    await state.update_data(phone=message.text)
+    phone = None
+    
+    if message.contact:
+        phone = message.contact.phone_number
+    else:
+        phone = message.text.strip()
+        if not re.match(r'^\+?[\d\s\-\(\)]{9,15}$', phone):
+            await message.answer(get_text("invalid_phone", language), reply_markup=contact_kb(language))
+            return
+    
+    await state.update_data(phone=phone)
     await state.set_state(BookingStates.waiting_reminder)
     await message.answer(get_text("choose_reminder", language), reply_markup=reminder_kb(language))
 
 @booking_router.message(BookingStates.waiting_reminder)
 async def process_reminder(message: Message, state: FSMContext, language: str):
-    reminder_map = {"10 минут": 10, "10 daqiqa": 10, "25 минут": 25, "25 daqiqa": 25, "30 минут": 30, "30 daqiqa": 30}
+    reminder_map = {
+        "10 минут": 10, "10 daqiqa": 10,
+        "25 минут": 25, "25 daqiqa": 25,
+        "30 минут": 30, "30 daqiqa": 30
+    }
     minutes = reminder_map.get(message.text, 30)
     await db.update_reminder_minutes(message.from_user.id, minutes)
+    
+    # Показываем inline клавиатуру для выбора даты
+    await message.answer(get_text("choose_date", language), reply_markup=dates_inline_kb(language))
+
+# Callback для выбора даты
+@booking_router.callback_query(F.data.startswith("date_"))
+async def process_date_callback(callback: CallbackQuery, state: FSMContext, language: str):
+    date_str = callback.data.replace("date_", "")
+    await state.update_data(date=date_str)
+    
+    await callback.message.edit_text(get_text("choose_time", language), 
+                                   reply_markup=times_inline_kb(date_str, language))
+
+# Callback для выбора времени
+@booking_router.callback_query(F.data.startswith("time_"))
+async def process_time_callback(callback: CallbackQuery, state: FSMContext, language: str):
+    time_str = callback.data.replace("time_", "")
     data = await state.get_data()
-    booking_id = await db.add_booking(message.from_user.id, data['date'], data['time'], data['phone'])
-    await send_booking_to_masters(booking_id, data['name'], data['phone'], data['date'], data['time'])
+    
+    if await db.is_time_busy(data.get('date'), time_str):
+        await callback.answer(get_text("time_busy", language), show_alert=True)
+        return
+    
+    # Создаем бронь
+    booking_id = await db.add_booking(
+        callback.from_user.id,
+        data['date'],
+        time_str,
+        data['phone']
+    )
+    
+    await send_booking_to_masters(booking_id, data['name'], data['phone'], data['date'], time_str)
+    
     await state.clear()
-    is_admin = message.from_user.id == config.ADMIN_ID
-    await message.answer(get_text("booking_sent", language), reply_markup=main_menu_kb(language, is_admin))
+    is_admin = callback.from_user.id == config.ADMIN_ID
+    
+    await callback.message.delete()
+    await callback.message.answer(get_text("booking_sent", language), 
+                                reply_markup=main_menu_kb(language, is_admin))
+
+@booking_router.callback_query(F.data == "back_to_dates")
+async def back_to_dates(callback: CallbackQuery, language: str):
+    await callback.message.edit_text(get_text("choose_date", language), 
+                                   reply_markup=dates_inline_kb(language))
 
 # Master handlers
 @master_router.callback_query(F.data.startswith("accept_"))
@@ -732,15 +678,23 @@ async def accept_booking(callback: CallbackQuery):
     if not await db.is_master(callback.from_user.id):
         await callback.answer(get_text("not_master", "ru"))
         return
+    
     booking_id = int(callback.data.split("_")[1])
     booking = await db.get_booking(booking_id)
+    
     if not booking or booking['status'] != 'pending':
         await callback.answer("Уже обработано")
         return
+    
     await db.update_booking_status(booking_id, "approved")
     await schedule_reminder(booking_id)
     await notify_user_approved(booking['user_id'], booking['date'], booking['time'], booking['language'])
-    await callback.message.edit_text(callback.message.text + "\n\n✅ ПРИНЯТО")
+    
+    # Обновляем сообщение с кнопками завершения
+    formatted_date = format_date_uz(booking['date'], "ru")
+    new_text = f"✅ ПРИНЯТО\n\n{callback.message.text}\n\n📅 {formatted_date}"
+    
+    await callback.message.edit_text(new_text, reply_markup=master_panel_kb(booking_id, "ru"))
     await callback.answer("Подтверждено")
 
 @master_router.callback_query(F.data.startswith("reject_"))
@@ -748,6 +702,7 @@ async def reject_booking_start(callback: CallbackQuery, state: FSMContext):
     if not await db.is_master(callback.from_user.id):
         await callback.answer(get_text("not_master", "ru"))
         return
+    
     booking_id = int(callback.data.split("_")[1])
     await state.update_data(booking_id=booking_id)
     await state.set_state(MasterStates.waiting_reject_reason)
@@ -758,22 +713,75 @@ async def reject_booking_start(callback: CallbackQuery, state: FSMContext):
 async def process_reject_reason(message: Message, state: FSMContext):
     data = await state.get_data()
     booking = await db.get_booking(data['booking_id'])
+    
     if not booking:
         await message.answer("Бронь не найдена")
         await state.clear()
         return
+    
     await db.update_booking_status(data['booking_id'], "rejected", message.text)
     await notify_user_rejected(booking['user_id'], message.text, booking['language'])
     await message.answer(get_text("booking_rejected_master", "ru"))
     await state.clear()
 
-# Admin handlers
-def is_admin(user_id: int) -> bool:
-    return user_id == config.ADMIN_ID
+# Завершение брони мастером
+@master_router.callback_query(F.data.startswith("complete_"))
+async def complete_booking(callback: CallbackQuery):
+    if not await db.is_master(callback.from_user.id):
+        await callback.answer(get_text("not_master", "ru"))
+        return
+    
+    booking_id = int(callback.data.split("_")[1])
+    await db.complete_booking(booking_id, early=False)
+    
+    await callback.message.edit_text(callback.message.text + "\n\n✅ УСЛУГА ЗАВЕРШЕНА")
+    await callback.answer(get_text("booking_completed", "ru"))
 
-@admin_router.message(F.text.in_(["🔧 Админ панель", "🔧 Admin panel"]))
-async def admin_panel(message: Message, language: str):
-    if not is_admin(message.from_user.id):
+@master_router.callback_query(F.data.startswith("early_"))
+async def early_complete_booking(callback: CallbackQuery):
+    if not await db.is_master(callback.from_user.id):
+        await callback.answer(get_text("not_master", "ru"))
+        return
+    
+    booking_id = int(callback.data.split("_")[1])
+    await db.complete_booking(booking_id, early=True)
+    
+    await callback.message.edit_text(callback.message.text + "\n\n🏃 УСЛУГА ЗАВЕРШЕНА ДОСРОЧНО")
+    await callback.answer(get_text("booking_early_completed", "ru"))
+
+# Команда /master для панели мастера
+@master_router.message(Command("master"))
+async def master_panel_cmd(message: Message, language: str):
+    if not await db.is_master(message.from_user.id):
+        await message.answer(get_text("not_master", language))
+        return
+    
+    bookings = await db.get_master_bookings(message.from_user.id)
+    
+    if not bookings:
+        await message.answer(get_text("no_active_bookings", language))
+        return
+    
+    for booking in bookings:
+        status_text = {"pending": "⏳ Ожидает", "approved": "✅ Подтверждено"}.get(booking['status'], booking['status'])
+        formatted_date = format_date_uz(booking['date'], language)
+        
+        text = get_text("booking_details", language,
+                       name=booking['full_name'],
+                       phone=booking['phone'],
+                       date=formatted_date,
+                       time=booking['time'],
+                       status=status_text)
+        
+        if booking['status'] == 'approved':
+            await message.answer(text, reply_markup=master_panel_kb(booking['id'], language))
+        else:
+            await message.answer(text, reply_markup=master_booking_kb(booking['id']))
+
+# Admin handlers - команда /admin
+@admin_router.message(Command("admin"))
+async def admin_cmd(message: Message, language: str):
+    if message.from_user.id != config.ADMIN_ID:
         await message.answer(get_text("no_access", language))
         return
     await message.answer(get_text("admin_menu", language), reply_markup=admin_menu_kb(language))
@@ -784,7 +792,7 @@ async def admin_back(callback: CallbackQuery, language: str):
 
 @admin_router.callback_query(F.data.startswith("admin_users_"))
 async def show_users(callback: CallbackQuery, language: str):
-    if not is_admin(callback.from_user.id):
+    if callback.from_user.id != config.ADMIN_ID:
         await callback.answer("⛔")
         return
     page = int(callback.data.split("_")[2])
@@ -794,14 +802,14 @@ async def show_users(callback: CallbackQuery, language: str):
         return
     stats = await db.get_statistics()
     total_pages = max(1, (stats['total_users'] + 4) // 5)
-    text = get_text("users", language) + f" (стр. {page+1}):\n\n"
+    text = f"👥 Пользователи (стр. {page+1}):\n\n"
     for user in users:
-        text += f"👤 {user['full_name']} (ID: {user['id']})\n@{user['username'] or 'нет'}\n\n"
+        text += f"• {user['full_name']} (ID: {user['id']})\n"
     await callback.message.edit_text(text, reply_markup=pagination_kb(page, total_pages, "admin_users", language))
 
 @admin_router.callback_query(F.data.startswith("admin_bookings_"))
 async def show_bookings(callback: CallbackQuery, language: str):
-    if not is_admin(callback.from_user.id):
+    if callback.from_user.id != config.ADMIN_ID:
         await callback.answer("⛔")
         return
     page = int(callback.data.split("_")[2])
@@ -811,15 +819,15 @@ async def show_bookings(callback: CallbackQuery, language: str):
         return
     stats = await db.get_statistics()
     total_pages = max(1, (stats['total_bookings'] + 4) // 5)
-    text = get_text("bookings", language) + f" (стр. {page+1}):\n\n"
+    text = f"📋 Брони (стр. {page+1}):\n\n"
     for b in bookings:
-        emoji = {'pending': '⏳', 'approved': '✅', 'rejected': '❌'}.get(b['status'], '❓')
-        text += f"{emoji} {b['full_name']} - {b['date']} {b['time']}\n"
+        emoji = {'pending': '⏳', 'approved': '✅', 'rejected': '❌', 'completed': '✅', 'completed_early': '🏃'}.get(b['status'], '❓')
+        text += f"{emoji} {b['full_name']} - {format_date_uz(b['date'], language)} {b['time']}\n"
     await callback.message.edit_text(text, reply_markup=pagination_kb(page, total_pages, "admin_bookings", language))
 
 @admin_router.callback_query(F.data == "admin_stats")
 async def show_stats(callback: CallbackQuery, language: str):
-    if not is_admin(callback.from_user.id):
+    if callback.from_user.id != config.ADMIN_ID:
         await callback.answer("⛔")
         return
     stats = await db.get_statistics()
@@ -831,17 +839,17 @@ async def show_stats(callback: CallbackQuery, language: str):
 ❌ Отклонено: {stats['rejected']}"""
     await callback.message.edit_text(text, reply_markup=admin_menu_kb(language))
 
-# Masters management handlers
+# Masters management
 @masters_router.callback_query(F.data == "admin_masters_menu")
 async def masters_menu(callback: CallbackQuery, language: str):
-    if not is_admin(callback.from_user.id):
+    if callback.from_user.id != config.ADMIN_ID:
         await callback.answer(get_text("no_access", language))
         return
     await callback.message.edit_text(get_text("masters_management", language), reply_markup=masters_menu_kb(language))
 
 @masters_router.callback_query(F.data == "master_add")
 async def add_master_start(callback: CallbackQuery, state: FSMContext, language: str):
-    if not is_admin(callback.from_user.id):
+    if callback.from_user.id != config.ADMIN_ID:
         await callback.answer(get_text("no_access", language))
         return
     await state.set_state(MasterManagementStates.waiting_master_id)
@@ -849,7 +857,7 @@ async def add_master_start(callback: CallbackQuery, state: FSMContext, language:
 
 @masters_router.message(MasterManagementStates.waiting_master_id)
 async def process_master_id(message: Message, state: FSMContext, language: str):
-    if not is_admin(message.from_user.id):
+    if message.from_user.id != config.ADMIN_ID:
         await message.answer(get_text("no_access", language))
         await state.clear()
         return
@@ -864,14 +872,15 @@ async def process_master_id(message: Message, state: FSMContext, language: str):
             return
         await db.add_master(master_id, user['full_name'], user['username'], message.from_user.id)
         await notify_new_master(master_id)
-        await message.answer(get_text("master_added", language, name=user['full_name'], id=master_id), reply_markup=masters_menu_kb(language))
+        await message.answer(get_text("master_added", language, name=user['full_name'], id=master_id), 
+                           reply_markup=masters_menu_kb(language))
     except ValueError:
         await message.answer("❌ Введите числовой ID")
     await state.clear()
 
 @masters_router.callback_query(F.data == "master_list")
 async def list_masters(callback: CallbackQuery, language: str):
-    if not is_admin(callback.from_user.id):
+    if callback.from_user.id != config.ADMIN_ID:
         await callback.answer(get_text("no_access", language))
         return
     masters = await db.get_all_masters()
@@ -885,7 +894,7 @@ async def list_masters(callback: CallbackQuery, language: str):
 
 @masters_router.callback_query(F.data == "master_remove_list")
 async def remove_master_list(callback: CallbackQuery, language: str):
-    if not is_admin(callback.from_user.id):
+    if callback.from_user.id != config.ADMIN_ID:
         await callback.answer(get_text("no_access", language))
         return
     masters = await db.get_all_masters()
@@ -896,7 +905,7 @@ async def remove_master_list(callback: CallbackQuery, language: str):
 
 @masters_router.callback_query(F.data.startswith("master_del_"))
 async def confirm_remove_master(callback: CallbackQuery, language: str):
-    if not is_admin(callback.from_user.id):
+    if callback.from_user.id != config.ADMIN_ID:
         await callback.answer(get_text("no_access", language))
         return
     master_id = int(callback.data.split("_")[2])
@@ -904,12 +913,12 @@ async def confirm_remove_master(callback: CallbackQuery, language: str):
     if not master:
         await callback.answer(get_text("master_not_found", language))
         return
-    text = f"❌ Удалить {master['full_name']} (ID: {master_id})?"
+    text = f"❌ Удалить {master['full_name']}?"
     await callback.message.edit_text(text, reply_markup=confirm_remove_master_kb(master_id, language))
 
 @masters_router.callback_query(F.data.startswith("master_confirm_del_"))
 async def do_remove_master(callback: CallbackQuery, language: str):
-    if not is_admin(callback.from_user.id):
+    if callback.from_user.id != config.ADMIN_ID:
         await callback.answer(get_text("no_access", language))
         return
     master_id = int(callback.data.split("_")[3])
@@ -917,35 +926,101 @@ async def do_remove_master(callback: CallbackQuery, language: str):
     await db.remove_master(master_id)
     await callback.message.edit_text(get_text("master_removed", language), reply_markup=masters_menu_kb(language))
 
-# Settings handlers
+# Settings handlers - inline клавиатура
 @settings_router.message(F.text.in_(["⚙️ Настройки", "⚙️ Sozlamalar"]))
 async def settings(message: Message, language: str):
     user = await db.get_user(message.from_user.id)
-    text = f"⚙️ Настройки\n\n🌐 Язык: {language}\n🔔 Напоминание: {user['reminder_minutes']} мин"
-    await message.answer(text, reply_markup=language_kb())
+    lang_name = "Русский 🇷🇺" if language == "ru" else "O'zbekcha 🇺🇿"
+    text = get_text("settings", language, lang=lang_name, min=user['reminder_minutes'])
+    await message.answer(text, reply_markup=settings_inline_kb(language))
 
+@settings_router.callback_query(F.data == "change_lang")
+async def change_lang(callback: CallbackQuery, language: str):
+    await callback.message.edit_text(get_text("choose_language", language), reply_markup=language_kb_inline())
+
+@settings_router.callback_query(F.data == "back_to_menu")
+async def back_to_menu(callback: CallbackQuery, language: str):
+    is_admin = callback.from_user.id == config.ADMIN_ID
+    await callback.message.delete()
+    await callback.message.answer(get_text("main_menu", language), reply_markup=main_menu_kb(language, is_admin))
+
+def language_kb_inline():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🇷🇺 Русский", callback_data="set_lang_ru")
+    builder.button(text="🇺🇿 O'zbekcha", callback_data="set_lang_uz")
+    builder.adjust(2)
+    return builder.as_markup()
+
+@settings_router.callback_query(F.data.startswith("set_lang_"))
+async def set_lang_callback(callback: CallbackQuery, language: str):
+    new_lang = callback.data.replace("set_lang_", "")
+    await db.update_user_language(callback.from_user.id, new_lang)
+    is_admin = callback.from_user.id == config.ADMIN_ID
+    await callback.message.delete()
+    await callback.message.answer(get_text("main_menu", new_lang), reply_markup=main_menu_kb(new_lang, is_admin))
+
+# My bookings with cancel button
 @settings_router.message(F.text.in_(["📋 Мои записи", "📋 Mening yozuvlarim"]))
 async def my_bookings(message: Message, language: str):
     bookings = await db.get_user_bookings(message.from_user.id)
-    if not bookings:
-        await message.answer("У вас нет записей.")
+    
+    active_bookings = [b for b in bookings if b['status'] in ['pending', 'approved']]
+    
+    if not active_bookings:
+        # Показываем историю если нет активных
+        if not bookings:
+            await message.answer(get_text("no_bookings", language))
+            return
+        
+        text = "📋 История записей:\n\n"
+        for b in bookings[:5]:
+            emoji = {'pending': '⏳', 'approved': '✅', 'rejected': '❌', 'completed': '✅', 'completed_early': '🏃', 'cancelled': '❌'}.get(b['status'], '❓')
+            date_str = format_date_uz(b['date'], language)
+            text += f"{emoji} {date_str} {b['time']}\n"
+        await message.answer(text)
         return
-    text = "📋 Ваши записи:\n\n"
-    for b in bookings:
-        status = {'pending': '⏳', 'approved': '✅', 'rejected': '❌'}.get(b['status'], '❓')
-        text += f"{status} {b['date']} {b['time']}\n"
-    await message.answer(text)
+    
+    # Показываем активные с кнопкой отмены
+    for b in active_bookings:
+        status_text = {"pending": "⏳ Ожидает подтверждения", "approved": "✅ Подтверждено"}.get(b['status'], b['status'])
+        date_str = format_date_uz(b['date'], language)
+        
+        text = f"📋 Активная запись:\n\n📅 {date_str}\n⏰ {b['time']}\n📱 {b['phone']}\nСтатус: {status_text}"
+        await message.answer(text, reply_markup=cancel_booking_kb(b['id'], language))
 
+@settings_router.callback_query(F.data.startswith("cancel_"))
+async def cancel_booking_handler(callback: CallbackQuery, language: str):
+    booking_id = int(callback.data.split("_")[1])
+    booking = await db.get_booking(booking_id)
+    
+    if not booking or booking['user_id'] != callback.from_user.id:
+        await callback.answer("Ошибка", show_alert=True)
+        return
+    
+    if booking['status'] not in ['pending', 'approved']:
+        await callback.answer("Нельзя отменить", show_alert=True)
+        return
+    
+    await db.cancel_booking(booking_id)
+    await callback.message.edit_text(callback.message.text + "\n\n❌ ОТМЕНЕНО")
+    await callback.answer(get_text("booking_cancelled", language))
+
+# Queue handler
 @settings_router.message(F.text.in_(["👥 Кто до меня?", "👥 Menden oldin kim?"]))
 async def show_queue(message: Message, language: str):
     today = datetime.now().strftime("%Y-%m-%d")
     bookings = await db.get_bookings_by_date(today, status='approved')
+    
     if not bookings:
         await message.answer(get_text("queue_empty", language))
         return
-    text = get_text("queue_title", language, date=today) + "\n\n"
+    
+    date_str = format_date_uz(today, language)
+    text = get_text("queue_title", language, date=date_str) + "\n"
+    
     for i, b in enumerate(bookings, 1):
         text += f"{i}. {b['time']} — {b['full_name']}\n"
+    
     await message.answer(text)
 
 # ============ MAIN ============
