@@ -1,5 +1,6 @@
 from aiogram import Router, F
 from aiogram.types import Message
+from datetime import datetime
 from database import db
 from keyboards.user_kb import main_menu_kb, language_kb
 from utils.texts import get_text
@@ -12,7 +13,7 @@ async def settings(message: Message, language: str):
     
     text = f"""⚙️ {get_text('settings', language)}
 
-🌐 {get_text('choose_language', language).replace('🌐 ', '')}: {language.upper()}
+🌐 Язык: {language.upper()}
 🔔 Напоминание: {user['reminder_minutes']} мин
 🌍 {user['city'] or 'Не указан'}
 
@@ -46,8 +47,6 @@ async def my_bookings(message: Message, language: str):
 
 @router.message(F.text.in_(["👥 Кто до меня?", "👥 Menden oldin kim?"]))
 async def show_queue(message: Message, language: str):
-    from datetime import datetime
-    
     today = datetime.now().strftime("%Y-%m-%d")
     bookings = await db.get_bookings_by_date(today, status='approved')
     

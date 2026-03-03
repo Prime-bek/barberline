@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
 from config import config
 from database import db
-from keyboards.admin_kb import admin_menu_kb, pagination_kb, user_details_kb
+from keyboards.admin_kb import admin_menu_kb, pagination_kb
 from keyboards.user_kb import main_menu_kb
 from utils.texts import get_text
 
@@ -44,7 +44,6 @@ async def show_users(callback: CallbackQuery, language: str):
         await callback.answer("Нет пользователей")
         return
     
-    # Подсчет общего количества для пагинации
     stats = await db.get_statistics()
     total_pages = (stats['total_users'] + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
     
@@ -98,7 +97,6 @@ async def show_statistics(callback: CallbackQuery, language: str):
         return
     
     stats = await db.get_statistics()
-    
     text = get_text("stats_text", language, **stats)
     
     await callback.message.edit_text(
@@ -108,7 +106,6 @@ async def show_statistics(callback: CallbackQuery, language: str):
 
 @router.message(F.text == "/user")
 async def show_user_details(message: Message, language: str):
-    """Показать детали пользователя по команде /user ID"""
     if not is_admin(message.from_user.id):
         return
     

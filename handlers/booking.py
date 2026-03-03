@@ -1,16 +1,15 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from datetime import datetime, timedelta
-from services.notifications import send_booking_to_masters
 import re
 from database import db
 from keyboards.user_kb import (
     main_menu_kb, reminder_kb, back_kb, 
     generate_dates_kb, generate_times_kb
 )
-from services.notifications import send_booking_to_master, send_booking_to_masters, send_booking_to_masters
+from services.notifications import send_booking_to_masters
 from utils.texts import get_text
 
 router = Router()
@@ -24,7 +23,6 @@ class BookingStates(StatesGroup):
     waiting_reminder = State()
 
 def generate_available_dates():
-    """Генерация доступных дат (следующие 14 дней)"""
     dates = []
     today = datetime.now()
     for i in range(14):
@@ -33,14 +31,12 @@ def generate_available_dates():
     return dates
 
 def generate_available_times():
-    """Генерация доступного времени (с 9:00 до 18:00)"""
     times = []
     for hour in range(9, 19):
         times.append(f"{hour:02d}:00")
     return times
 
 def validate_phone(phone: str) -> bool:
-    """Валидация номера телефона"""
     pattern = r'^\+?[\d\s\-\(\)]{9,15}$'
     return bool(re.match(pattern, phone))
 
@@ -49,7 +45,6 @@ def validate_phone(phone: str) -> bool:
 async def start_booking(message: Message, state: FSMContext, language: str):
     user = await db.get_user(message.from_user.id)
     
-    # Проверка на активную бронь
     if await db.has_active_booking(message.from_user.id):
         await message.answer(get_text("already_booked", language))
         return
@@ -118,7 +113,6 @@ async def process_time(message: Message, state: FSMContext, language: str):
     data = await state.get_data()
     date = data.get('date')
     
-    # Проверка занятости времени
     if await db.is_time_busy(date, message.text):
         await message.answer(get_text("time_busy", language))
         return
@@ -159,7 +153,6 @@ async def process_reminder(message: Message, state: FSMContext, language: str):
     
     data = await state.get_data()
     
-    # Создаем бронь
     booking_id = await db.add_booking(
         message.from_user.id,
         data['date'],
@@ -167,7 +160,6 @@ async def process_reminder(message: Message, state: FSMContext, language: str):
         data['phone']
     )
     
-    # Отправляем мастеру
     await send_booking_to_masters(
         booking_id,
         data['name'],
@@ -175,6 +167,7 @@ async def process_reminder(message: Message, state: FSMContext, language: str):
         data['date'],
         data['time']
     )
+    
     await state.clear()
     is_admin = message.from_user.id == 1265652628
     
@@ -182,4 +175,3 @@ async def process_reminder(message: Message, state: FSMContext, language: str):
         get_text("booking_sent", language),
         reply_markup=main_menu_kb(language, is_admin)
     )
-    
