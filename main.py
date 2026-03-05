@@ -23,7 +23,7 @@ class Config:
     BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
     ADMIN_ID: int = int(os.getenv("ADMIN_ID", "1265652628"))
     DB_PATH: str = "barbershop.db"
-    TIMEZONE: str = "Asia/Tashkent"
+    TIMEZONE: str = "Asia/Tashkent"  # Уже есть, проверьте что используется
 
 config = Config()
 
@@ -300,14 +300,15 @@ def set_bot(bot: Bot):
     global bot_instance
     bot_instance = bot
 
-async def send_reminder(user_id: int, booking_id: int, time: str, lang: str):
+async def send_reminder(user_id: int, booking_id: int, time: str, lang: str, minutes: int):
     if not bot_instance:
         return
     try:
-        text = get_text("reminder", lang, minutes="X", time=time)
+        text = get_text("reminder", lang, minutes=minutes, time=time)
         await bot_instance.send_message(user_id, text)
+        print(f"✅ Напоминание отправлено пользователю {user_id}")
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"❌ Ошибка отправки напоминания: {e}")
 
 async def notify_user_approved(user_id: int, date: str, time: str, lang: str):
     if not bot_instance:
@@ -377,6 +378,31 @@ async def schedule_reminder(booking_id: int):
     time_str = booking['time']
     reminder_minutes = user['reminder_minutes']
     
+    # Время брони в Ташкенте
+    booking_datetime = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+    
+    # Напоминание за X минут до
+    reminder_datetime = booking_datetime - timedelta(minutes=reminder_minutes)
+    
+    # Проверяем не прошло ли уже время напоминания
+    now = datetime.now()
+    if reminder_datetime <= now:
+        return
+    
+    # Добавляем задачу в планировщик
+    scheduler.add_job(
+        send_reminder,
+        trigger=DateTrigger(run_date=reminder_datetime),
+        args=[booking['user_id'], booking_id, time_str, user['language'], reminder_minutes],
+        id=f"reminder_{booking_id}",
+        replace_existing=True
+    )
+    print(f"✅ Напоминание запланировано на {reminder_datetime} для брони {booking_id}")
+    
+    date_str = booking['date']
+    time_str = booking['time']
+    reminder_minutes = user['reminder_minutes']
+    
     booking_datetime = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
     reminder_datetime = booking_datetime - timedelta(minutes=reminder_minutes)
     
@@ -393,6 +419,7 @@ async def schedule_reminder(booking_id: int):
 
 def init_scheduler():
     scheduler.start()
+    print(f"✅ Планировщик запущен с часовым поясом: {config.TIMEZONE}")
 
 # ============ KEYBOARDS ============
 def language_kb():
@@ -533,6 +560,7 @@ def settings_inline_kb(lang: str = "ru"):
     builder = InlineKeyboardBuilder()
     builder.button(text=get_text("change_language", lang), callback_data="change_lang")
     builder.button(text=get_text("back", lang), callback_data="back_to_menu")
+    builder.adjust(1)  # Одна кнопка в ряд
     return builder.as_markup()
 
 # ============ MIDDLEWARE ============
@@ -936,7 +964,22 @@ async def settings(message: Message, language: str):
 
 @settings_router.callback_query(F.data == "change_lang")
 async def change_lang(callback: CallbackQuery, language: str):
-    await callback.message.edit_text(get_text("choose_language", language), reply_markup=language_kb_inline())
+    # Показываем inline кнопки для смены языка
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🇷🇺 Русский", callback_data="set_lang_ru")
+    builder.button(text="🇺🇿 O'zbekcha", callback_data="set_lang_uz")
+    builder.button(text=get_text("back", language), callback_data="back_to_settings")
+    builder.adjust(2, 1)
+    await callback.message.edit_text(get_text("choose_language", language), reply_markup=builder.as_markup())
+
+@settings_router.callback_query(F.data == "back_to_settings")
+async def back_to_settings(callback: CallbackQuery, language: str):
+    user = await db.get_user(callback.from_user.id)
+    lang_name = "Русский 🇷🇺" if language == "ru" else "O'zbekcha 🇺🇿"
+    await callback.message.edit_text(
+        get_text("settings", language, lang=lang_name, min=user['reminder_minutes']),
+        reply_markup=settings_inline_kb(language)
+    )
 
 @settings_router.callback_query(F.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery, language: str):
@@ -955,9 +998,15 @@ def language_kb_inline():
 async def set_lang_callback(callback: CallbackQuery, language: str):
     new_lang = callback.data.replace("set_lang_", "")
     await db.update_user_language(callback.from_user.id, new_lang)
-    is_admin = callback.from_user.id == config.ADMIN_ID
-    await callback.message.delete()
-    await callback.message.answer(get_text("main_menu", new_lang), reply_markup=main_menu_kb(new_lang, is_admin))
+    
+    # Показываем обновленные настройки с новым языком
+    user = await db.get_user(callback.from_user.id)
+    lang_name = "Русский 🇷🇺" if new_lang == "ru" else "O'zbekcha 🇺🇿"
+    
+    await callback.message.edit_text(
+        get_text("settings", new_lang, lang=lang_name, min=user['reminder_minutes']),
+        reply_markup=settings_inline_kb(new_lang)
+    )
 
 # My bookings with cancel button
 @settings_router.message(F.text.in_(["📋 Мои записи", "📋 Mening yozuvlarim"]))
