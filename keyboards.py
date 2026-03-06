@@ -55,7 +55,6 @@ def dates_inline_kb(lang: str = "ru"):
     return builder.as_markup()
 
 async def times_inline_kb(date_str: str, lang: str, db):
-    """Async версия с проверкой занятости"""
     builder = InlineKeyboardBuilder()
     
     hours = list(range(8, 21))
@@ -65,7 +64,6 @@ async def times_inline_kb(date_str: str, lang: str, db):
                 continue
             time_str = f"{hour:02d}:{minute:02d}"
             
-            # Проверяем занятость
             is_busy = await db.is_time_busy(date_str, time_str)
             
             if is_busy:
@@ -145,7 +143,7 @@ def settings_inline_kb(lang: str = "ru"):
     builder = InlineKeyboardBuilder()
     builder.button(text=get_text("change_language", lang), callback_data="change_lang")
     builder.button(text=get_text("back", lang), callback_data="back_to_menu")
-    builder.adjust(1)
+    builder.adjust(1, 1)
     return builder.as_markup()
 
 def language_inline_kb(lang: str = "ru"):

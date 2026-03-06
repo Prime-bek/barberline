@@ -1,5 +1,4 @@
 import re
-import asyncio
 import logging
 from datetime import datetime, timedelta
 from aiogram import Router, F, BaseMiddleware
@@ -21,7 +20,6 @@ from keyboards import (
     confirm_remove_master_kb, pagination_kb, settings_inline_kb, language_inline_kb
 )
 
-# ============ SERVICES ============
 scheduler = AsyncIOScheduler(timezone=config.TIMEZONE)
 bot_instance = None
 
@@ -96,7 +94,6 @@ async def notify_master_removed(master_id: int):
         logging.error(f"Error: {e}")
 
 async def schedule_reminder(booking_id: int):
-    """Одна корректная версия функции"""
     booking = await db.get_booking(booking_id)
     if not booking or booking['status'] != 'approved':
         return
@@ -109,7 +106,6 @@ async def schedule_reminder(booking_id: int):
     time_str = booking['time']
     reminder_minutes = user['reminder_minutes']
     
-    # Время в Ташкенте
     tz = timezone(config.TIMEZONE)
     booking_datetime = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
     booking_datetime = tz.localize(booking_datetime)
@@ -130,7 +126,6 @@ async def schedule_reminder(booking_id: int):
     logging.info(f"✅ Напоминание запланировано: {reminder_datetime}")
 
 async def restore_reminders():
-    """Восстановление напоминаний при перезапуске"""
     bookings = await db.get_approved_bookings()
     tz = timezone(config.TIMEZONE)
     now = datetime.now(tz)
@@ -164,10 +159,8 @@ def init_scheduler():
     scheduler.start()
     logging.info(f"✅ Планировщик запущен: {config.TIMEZONE}")
 
-# ============ MIDDLEWARE ============
 class LanguageMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):
-        # Проверка на наличие from_user
         if not hasattr(event, 'from_user') or not event.from_user:
             return await handler(event, data)
         
@@ -178,7 +171,6 @@ class LanguageMiddleware(BaseMiddleware):
             data['language'] = 'ru'
         return await handler(event, data)
 
-# ============ STATES ============
 class BookingStates(StatesGroup):
     waiting_name = State()
     waiting_phone = State()
@@ -190,7 +182,6 @@ class MasterStates(StatesGroup):
 class MasterManagementStates(StatesGroup):
     waiting_master_id = State()
 
-# ============ ROUTERS ============
 start_router = Router()
 booking_router = Router()
 master_router = Router()
@@ -198,7 +189,6 @@ admin_router = Router()
 settings_router = Router()
 masters_router = Router()
 
-# ============ START HANDLERS ============
 @start_router.message(Command("start"))
 async def cmd_start(message: Message):
     user = await db.get_user(message.from_user.id)
@@ -217,7 +207,6 @@ async def set_language(message: Message):
     is_admin = message.from_user.id == config.ADMIN_ID
     await message.answer(get_text("main_menu", lang), reply_markup=main_menu_kb(lang, is_admin))
 
-# ============ BOOKING HANDLERS ============
 @booking_router.message(F.text.in_(["📅 Записаться", "📅 Yozilish"]))
 async def start_booking(message: Message, state: FSMContext, language: str):
     if await db.has_active_booking(message.from_user.id):
@@ -266,7 +255,6 @@ async def process_date_callback(callback: CallbackQuery, state: FSMContext, lang
     date_str = callback.data.replace("date_", "")
     await state.update_data(date=date_str)
     
-    # Async генерация времени с проверкой занятости
     kb = await times_inline_kb(date_str, language, db)
     await callback.message.edit_text(get_text("choose_time", language), reply_markup=kb)
 
@@ -293,18 +281,21 @@ async def process_time_callback(callback: CallbackQuery, state: FSMContext, lang
     await send_booking_to_masters(booking_id, data['name'], data['phone'], data['date'], time_str)
     
     await state.clear()
+    
+    # Берем язык из базы для точности
+    user = await db.get_user(callback.from_user.id)
+    lang = user.get('language', 'ru') if user else 'ru'
     is_admin = callback.from_user.id == config.ADMIN_ID
     
     await callback.message.delete()
-    await callback.message.answer(get_text("booking_sent", language), 
-                                reply_markup=main_menu_kb(language, is_admin))
+    await callback.message.answer(get_text("booking_sent", lang), 
+                                reply_markup=main_menu_kb(lang, is_admin))
 
 @booking_router.callback_query(F.data == "back_to_dates")
 async def back_to_dates(callback: CallbackQuery, language: str):
     await callback.message.edit_text(get_text("choose_date", language), 
                                    reply_markup=dates_inline_kb(language))
 
-# ============ MASTER HANDLERS ============
 @master_router.callback_query(F.data.startswith("accept_"))
 async def accept_booking(callback: CallbackQuery):
     if not await db.is_master(callback.from_user.id):
@@ -407,7 +398,6 @@ async def master_panel_cmd(message: Message, language: str):
         else:
             await message.answer(text, reply_markup=master_booking_kb(booking['id']))
 
-# ============ ADMIN HANDLERS ============
 @admin_router.message(Command("admin"))
 async def admin_cmd(message: Message, language: str):
     if message.from_user.id != config.ADMIN_ID:
@@ -415,14 +405,17 @@ async def admin_cmd(message: Message, language: str):
         return
     await message.answer(get_text("admin_menu", language), reply_markup=admin_menu_kb(language))
 
-@admin_router.message(F.text == "🔧 Админ панель")
+@admin_router.message(F.text.in_([get_text("settings_btn", "ru"), get_text("settings_btn", "uz")]))
 async def admin_text_handler(message: Message, language: str):
-    """Обработка кнопки из меню"""
     await admin_cmd(message, language)
 
 @admin_router.callback_query(F.data == "admin_back")
 async def admin_back(callback: CallbackQuery, language: str):
     await callback.message.edit_text(get_text("admin_menu", language), reply_markup=admin_menu_kb(language))
+
+@admin_router.callback_query(F.data == "ignore")
+async def ignore(callback: CallbackQuery):
+    await callback.answer()
 
 @admin_router.callback_query(F.data.startswith("admin_users_"))
 async def show_users(callback: CallbackQuery, language: str):
@@ -473,7 +466,6 @@ async def show_stats(callback: CallbackQuery, language: str):
 ❌ Отклонено: {stats['rejected']}"""
     await callback.message.edit_text(text, reply_markup=admin_menu_kb(language))
 
-# ============ MASTERS MANAGEMENT ============
 @masters_router.callback_query(F.data == "admin_masters_menu")
 async def masters_menu(callback: CallbackQuery, language: str):
     if callback.from_user.id != config.ADMIN_ID:
@@ -560,8 +552,7 @@ async def do_remove_master(callback: CallbackQuery, language: str):
     await db.remove_master(master_id)
     await callback.message.edit_text(get_text("master_removed", language), reply_markup=masters_menu_kb(language))
 
-# ============ SETTINGS HANDLERS ============
-@settings_router.message(F.text.in_(["⚙️ Настройки", "⚙️ Sozlamalar"]))
+@settings_router.message(F.text.in_([get_text("settings_btn", "ru"), get_text("settings_btn", "uz")]))
 async def settings(message: Message, language: str):
     user = await db.get_user(message.from_user.id)
     lang_name = "Русский 🇷🇺" if language == "ru" else "O'zbekcha 🇺🇿"
@@ -589,21 +580,20 @@ async def back_to_menu(callback: CallbackQuery, language: str):
     await callback.message.answer(get_text("main_menu", language), reply_markup=main_menu_kb(language, is_admin))
 
 @settings_router.callback_query(F.data.startswith("set_lang_"))
-async def set_lang_callback(callback: CallbackQuery, language: str):
+async def set_lang_callback(callback: CallbackQuery):
     new_lang = callback.data.replace("set_lang_", "")
     await db.update_user_language(callback.from_user.id, new_lang)
     
-    # Показываем настройки с новым языком
-    user = await db.get_user(callback.from_user.id)
-    lang_name = "Русский 🇷🇺" if new_lang == "ru" else "O'zbekcha 🇺🇿"
+    # Обновляем меню сразу
+    is_admin = callback.from_user.id == config.ADMIN_ID
     
-    await callback.message.edit_text(
-        get_text("settings", new_lang, lang=lang_name, min=user['reminder_minutes']),
-        reply_markup=settings_inline_kb(new_lang)
+    await callback.message.delete()
+    await callback.message.answer(
+        get_text("main_menu", new_lang),
+        reply_markup=main_menu_kb(new_lang, is_admin)
     )
 
-# ============ MY BOOKINGS & QUEUE ============
-@settings_router.message(F.text.in_(["📋 Мои записи", "📋 Mening yozuvlarim"]))
+@settings_router.message(F.text.in_([get_text("my_bookings", "ru"), get_text("my_bookings", "uz")]))
 async def my_bookings(message: Message, language: str):
     bookings = await db.get_user_bookings(message.from_user.id)
     
@@ -647,7 +637,7 @@ async def cancel_booking_handler(callback: CallbackQuery, language: str):
     await callback.message.edit_text(callback.message.text + "\n\n❌ ОТМЕНЕНО")
     await callback.answer(get_text("booking_cancelled", language))
 
-@settings_router.message(F.text.in_(["👥 Кто до меня?", "👥 Menden oldin kim?"]))
+@settings_router.message(F.text.in_([get_text("queue", "ru"), get_text("queue", "uz")]))
 async def show_queue(message: Message, language: str):
     today = datetime.now().strftime("%Y-%m-%d")
     bookings = await db.get_bookings_by_date(today, status='approved')

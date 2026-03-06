@@ -6,7 +6,6 @@ from config import config
 class Database:
     def __init__(self):
         self.db_path = config.DB_PATH
-        self._pool = None
 
     async def init(self):
         async with aiosqlite.connect(self.db_path) as db:
@@ -212,7 +211,6 @@ class Database:
                 return [dict(row) for row in rows]
 
     async def get_approved_bookings(self):
-        """Для восстановления напоминаний при перезапуске"""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("""
